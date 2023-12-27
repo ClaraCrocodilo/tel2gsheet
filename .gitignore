@@ -1,0 +1,5 @@
+.python-version
+.vimspector.json
+settings.yaml
+*.session
+*.session-journal
