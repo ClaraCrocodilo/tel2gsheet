@@ -1,11 +1,18 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 import datetime as dt
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 import logging
+import os.path
 import time
 from typing import Optional
 
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+import pandas as pd
 from telethon import TelegramClient
 from telethon.tl.patched import Message
 import yaml
@@ -51,6 +58,10 @@ class Chat(ABC):
     def process_message(self, msg: Message) -> None:
         pass
 
+    @abstractmethod
+    def update_state(self):
+        pass
+
 
 class ExpenseChat(Chat):
     def __init__(self, chat_id: int, name: str):
@@ -58,15 +69,79 @@ class ExpenseChat(Chat):
         self.name = name
         self.help: str = "TODO: write help msg"
         self.expenses: list[Expense] = []
+        self.parsing_error: list[Expense] = []
+        self.treated_messages: set[int] = set()
 
     def process_message(self, msg: Message):
-        self.expenses.append(Expense.parse(msg))
+        if msg.id in self.treated_messages:
+            return
+        logger.info("Parsing message '%s' (%d)", msg.text, msg.id)
+        try:
+            self.expenses.append(Expense.parse(msg))
+        except (IndexError, InvalidOperation):
+            logger.warning("Couldn't parse message '%s' (%d)",
+                           msg.text, msg.id)
 
     def fetch_gsheet_state(self):
         pass
 
     def to_gsheet(self):
         pass
+
+
+"""
+> x = self.sheets.values().append(spreadsheetId=self.sheet_id, range="Telegram!A:B", valueInputOption="USER_ENTERED", body={"values": [["X", "Y"], [5, 6]]}).execute()
+result = (
+"""
+class GSheet:
+    def __init__(self):
+        self.scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+        self.sheets = self._build_svc().spreadsheets()
+
+    def _build_svc(self):
+        gtoken = "google-token.json"
+        creds_file = "google-credentials.json"
+        creds = None
+        if os.path.exists(gtoken):
+            creds = Credentials.from_authorized_user_file(gtoken, self.scopes)
+            if not creds or not creds.valid:
+                if creds and creds.expired and creds.refresh_token:
+                    creds.refresh_token(Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file(
+                creds_file, self.scopes)
+            creds = flow.run_local_server(port=0)
+            with open(gtoken, "w") as token:
+                token.write(creds.to_json())
+        svc = build("sheets", "v4", credentials=creds)
+        return svc
+
+    def read(self, sheet_id: str, sheet_name: str,
+             start_col: str, end_col: Optional[str]) -> pd.DataFrame:
+        range_name = f"{sheet_name}!{start_col}:{end_col or start_col}"
+        result = self.sheets.values().get(
+            spreadSheetId=sheet_id,
+            range=range_name
+        ).execute()
+        values = result.get("values", [])
+        if values:
+            df = pd.DataFrame(values[1:], columns=values[0])
+        else:
+            df = pd.DataFrame()
+        return df
+
+    def write(self, sheet_id: str, sheet_name: str,
+              start_col: str, end_col: Optional[str]):
+        range_name = f"{sheet_name}!{start_col}:{end_col or start_col}"
+        self.sheets.values().append(
+            spreadSheetId=self.sheet_id,
+            range=range_name,
+            valueInputOption="USER_ENTERED",
+            body
+
+g = GSheet("")
+print(g)
+
 
 
 class TelegramWatcher:

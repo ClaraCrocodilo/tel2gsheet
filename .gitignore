@@ -2,4 +2,5 @@
 .vimspector.json
 settings.yaml
 *.session
-*.session-journal
+google-credentials.json
+google-token.json
