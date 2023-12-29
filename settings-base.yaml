@@ -5,11 +5,12 @@ telegram:
     name: "tel2gsheet"
   chats:
     expenses:
-      chat_1: chat_1_id
-      chat_2: chat_2_id
+      id: expenses_chat_id
     calories:
-      chat_3: chat_3_id
+      id: calories_chat_id
 google:
   sheets:
     expenses:
-      id: sheet_id
+      id: expenses_sheet_id
+    calories:
+      id: calories_chat_id

@@ -4,3 +4,4 @@ settings.yaml
 *.session
 google-credentials.json
 google-token.json
+.jedi/*
