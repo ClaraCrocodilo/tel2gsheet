@@ -18,7 +18,17 @@ from tel2gsheet import (
 logger = logging.getLogger(__name__)
 TEXT_HEADER = "# MENSAGEM AUTOMATICA #\n\n"
 HELP_MESSAGE = (
-    "Mensagem de ajuda em construção"
+    "As mensagens devem ter o seguinte formato:\n"
+    "PRECO - CONTRAPRATE - DESCRICAO - CONTA - DATA (OPCIONAL)\n"
+    "PRECO - Valor numerico com ponto como separador decimal, e.g., 70, 35.2\n"
+    "CONTRAPRATE - Contraparte da despesa, e.g., Uber, Dia Santo Antonio\n"
+    "DESCRICAO - Descrição da despesa, e.g., Uber p/ shopping\n"
+    "CONTA - Conta usada para o pagamento, e.g., BB Corrente, XP Credito\n"
+    "DATA - Data da transação. Se não for especificado, assume-se a data da "
+    "mensagem como data da despesa\n\n"
+    "Ex:\n"
+    "19.94 - Uber - Uber p/ Hospital - NuBank Credito - 2023-12-28\n"
+    "20 - Loterica - Aposta Mega Virada - Dinheiro"
 )
 TRACKER_NAME = "expenses"
 
@@ -85,30 +95,16 @@ class ExpensesTracker(Tracker):
         return cls(tel, gsheet, chat_id, sheet_id)
 
     def fetch_telegram_messages(self) -> list[Message]:
-        """
-        logger.info("Probing group %s (%d) for new messages",
-                    chat.name, chat.id)
-        help_wanted: list[int] = []
-        help_given: set[int] = set()
-        async for msg in self.client.iter_messages(chat.id, limit=100):
-            if msg.text == "?":
-                help_wanted.append(msg.id)
-            elif msg.is_reply:
-                already_replied.add(msg.reply_to.reply_to_msg_id)
-            elif msg.text is None or msg.text.startswith("#"):
-                continue
-            else:
-                chat.process_message(msg)
+        return asyncio.get_event_loop().run_until_complete(
+            self.telegram.fetch_msgs(self.chat_id)
+        )
 
-        need_help = [i for i in help_wanted if i not in help_given]
-        if need_help:
-            await self._send(chat.id, chat.help, need_help[0])
-        """
-        return asyncio.get_event_loop().run_until_complete(self.telegram.fetch_msgs(self.chat_id))
-
-    def send_telegram_message(self, chat_id: int, txt: str,
-                              reply_to: Optional[int]):
-        asyncio.get_event_loop().run_until_complete(self.telegram.send_msg(chat_id, txt, reply_to))
+    def send_telegram_message(
+            self, chat_id: int, txt: str, reply_to: Optional[int]
+    ):
+        asyncio.get_event_loop().run_until_complete(
+            self.telegram.send_msg(chat_id, txt, reply_to)
+        )
 
     def process_received_messages(self):
         msgs = [m for m in self.fetch_telegram_messages()
@@ -142,9 +138,6 @@ class ExpensesTracker(Tracker):
             [msg for msg in help_wanted if msg.id not in answered]
         )
         return
-
-    def treat_help_messages(self, msgs: list[Message]) -> list[Message]:
-        pass
 
     def fetch_entries(self) -> pd.DataFrame:
         sheet_name = "Entradas"
@@ -200,8 +193,14 @@ class ExpensesTracker(Tracker):
         data = []
         for m in self.to_upload:
             data.extend([
-                [dt_fmt(m.date), m.counterparty, m.description, a, dec_fmt(p), m.id]
-                for a, p in [("Despesa", m.price), (m.account, -m.price)]
+                [
+                    dt_fmt(m.date),
+                    m.counterparty,
+                    m.description,
+                    a,
+                    dec_fmt(p),
+                    m.id
+                ] for a, p in [("Despesa", m.price), (m.account, -m.price)]
             ])
         self.gsheet.write(self.spreadsheet_id, sheet_name, sheet_range, data)
 
@@ -235,11 +234,19 @@ class ExpensesTracker(Tracker):
             self.text_header +
             (f"{success_text}\n\n{ok_msgs}\n\n\n" if ok_msgs else "") +
             (f"{failure_text}\n\n{nok_msgs}\n\n\n" if nok_msgs else "") +
-            spent_text
+            spent_text +
+            "\n\n" +
+            "Em caso de dúvidas, envie uma mensagem contendo o caractere '?'"
         )
         self.send_telegram_message(self.chat_id, text, None)
         if self.asked_for_help:
-            help_msg = self.text_header + self.help_message
+
+            accounts = set(self.accounts_df[self.accounts_df["Tipo"].isin(
+                ["Asset", "Liability"]
+            )]["Conta"].values.tolist())
+
+            valid_acc_text = f"\n\nContas válidas: {', '.join(accounts)}"
+            help_msg = self.text_header + self.help_message + valid_acc_text
             self.send_telegram_message(
                 self.chat_id, help_msg, max(self.asked_for_help)
             )
@@ -287,18 +294,4 @@ def load_and_run_trackers(trackers: list[Type[Tracker]],
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    """
-    tel = TelegramConnection.from_yaml()
-    gsheet = GSheetConnection()
-    exp_tracker_name = "expenses"
-    exp_chat_id = load_chat_id(exp_tracker_name)
-    exp_sheet_id = load_sheet_id(exp_tracker_name)
-    exp_tracker = ExpensesTracker(tel, gsheet, exp_chat_id, exp_sheet_id)
-    exp_tracker.fetch_gsheet_state()
-    # TODO: clean state
-    exp_tracker.process_received_messages()
-    exp_tracker.update_gsheet_state()
-    exp_tracker.send_feedback_messages()
-    exp_tracker.clean_local_state()
-    """
     load_and_run_trackers([ExpensesTracker])
