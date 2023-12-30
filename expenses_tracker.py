@@ -16,6 +16,7 @@ from tel2gsheet import (
 
 
 logger = logging.getLogger(__name__)
+
 TEXT_HEADER = "# MENSAGEM AUTOMATICA #\n\n"
 HELP_MESSAGE = (
     "As mensagens devem ter o seguinte formato:\n"
@@ -88,6 +89,7 @@ class ExpensesTracker(Tracker):
 
     @classmethod
     def from_yaml(cls, file_path: str = "settings.yaml"):
+        logger.debug("Loading %s from '%s'", TRACKER_NAME, file_path)
         tel = TelegramConnection.from_yaml(file_path)
         gsheet = GSheetConnection()
         chat_id = load_chat_id(TRACKER_NAME, file_path)
@@ -95,6 +97,7 @@ class ExpensesTracker(Tracker):
         return cls(tel, gsheet, chat_id, sheet_id)
 
     def fetch_telegram_messages(self) -> list[Message]:
+        logger.info("Fetching messages from chat %d", self.chat_id)
         return asyncio.get_event_loop().run_until_complete(
             self.telegram.fetch_msgs(self.chat_id)
         )
@@ -102,14 +105,17 @@ class ExpensesTracker(Tracker):
     def send_telegram_message(
             self, chat_id: int, txt: str, reply_to: Optional[int]
     ):
+        logger.info("Sending to chat %d:\n%s", chat_id, txt)
         asyncio.get_event_loop().run_until_complete(
             self.telegram.send_msg(chat_id, txt, reply_to)
         )
 
     def process_received_messages(self):
+        logger.info("Processing new Telegram messages")
         msgs = [m for m in self.fetch_telegram_messages()
                 if m.id not in self.processed_msgs]
         if not msgs:
+            logger.info("No new messages")
             return ([], [])
 
         accounts = set(self.accounts_df[self.accounts_df["Tipo"].isin(
@@ -118,18 +124,21 @@ class ExpensesTracker(Tracker):
 
         help_wanted: list[int] = []
         answered: set[int] = set()
+        logger.info("Parsing messages")
         for msg in msgs:
             if msg.is_reply:
                 answered.add(msg.reply_to.reply_to_msg_id)
-            elif msg.text is None or msg.text.startswith("#"):
+
+            if msg.text is None or msg.text.startswith("#"):
                 continue
-            if msg.text.strip() == "?":
+            elif msg.text.strip() == "?":
                 help_wanted.append(msg)
             else:
                 try:
                     self.to_upload.append(ExpenseMessage.parse(msg, accounts))
                 except (IndexError, InvalidOperation, IndexError) as e:
-                    logging.error(e)
+                    logger.error("Error parsing message: '%s'", msg.text)
+                    logger.debug(e)
                     self.failed_to_parse.append(msg)
 
         self.to_upload.reverse()
@@ -137,6 +146,7 @@ class ExpensesTracker(Tracker):
         self.asked_for_help.extend(
             [msg for msg in help_wanted if msg.id not in answered]
         )
+        logger.info("Finished processing new messages")
         return
 
     def fetch_entries(self) -> pd.DataFrame:
@@ -158,9 +168,11 @@ class ExpensesTracker(Tracker):
         return {int(i) for i in df["MsgId"].values if i}
 
     def fetch_gsheet_state(self):
+        logger.info("Fetching GSheet state")
         self.entries_df = self.fetch_entries()
         self.accounts_df = self.fetch_accounts()
         self.processed_msgs = self.fetch_processed_messages()
+        logger.info("Finished fetching GSheet state")
 
     def clean_local_state(self):
         self.to_upload = []
@@ -205,8 +217,10 @@ class ExpensesTracker(Tracker):
         self.gsheet.write(self.spreadsheet_id, sheet_name, sheet_range, data)
 
     def update_gsheet_state(self):
+        logger.info("Uploading new data to GSheet")
         self.upload_entries()
         self.upload_processed_messages()
+        logger.info("Finished uploading to GSheet")
 
     def send_feedback_messages(self):
         if not (self.to_upload or self.failed_to_parse):
@@ -278,20 +292,31 @@ class ExpensesTracker(Tracker):
         return df[~df["Values"].isna()]["Values"].values.tolist()
 
     def run(self):
+        logger.info("Running %s", self.__class__.__name__)
         self.fetch_gsheet_state()
         self.process_received_messages()
         self.update_gsheet_state()
         self.send_feedback_messages()
         self.clean_local_state()
+        logger.info("Finished running %s", self.__class__.__name__)
 
 
-def load_and_run_trackers(trackers: list[Type[Tracker]],
-                          yaml_file_path: str = "settings.yaml"):
+def load_and_run_trackers(
+    trackers: list[Type[Tracker]],
+        yaml_file_path: str = "settings.yaml"
+):
+    logger.info("Loading and running the following trackers: %s",
+                ", ".join([cls.__name__ for cls in trackers]))
+    logger.debug("Using 'yaml_file_path' = %s", yaml_file_path)
     t_objs = [t.from_yaml(yaml_file_path) for t in trackers]
+    logger.info("Loaded all trackers")
     for tracker in t_objs:
+        logger.info("Running tracker %s", tracker.__class__.__name__)
         tracker.run()
+    logger.info("Finished running all trackers. Exiting")
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
+    logger.setLevel(level=logging.DEBUG)
     load_and_run_trackers([ExpensesTracker])

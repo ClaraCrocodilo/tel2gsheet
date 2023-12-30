@@ -20,7 +20,7 @@ GOOGLE_SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 
 def load_chat_id(chat: str, yaml_file_path: str = "settings.yaml") -> int:
-    logger.info("Fetching chat id for '%s' from '%s'", chat, yaml_file_path)
+    logger.debug("Loading chat id for '%s' from '%s'", chat, yaml_file_path)
     with open(yaml_file_path, "r", encoding="UTF-8") as f:
         cfg = yaml.safe_load(f)
         chat_id = cfg["telegram"]["chats"][chat]["id"]
@@ -28,6 +28,7 @@ def load_chat_id(chat: str, yaml_file_path: str = "settings.yaml") -> int:
 
 
 def load_sheet_id(sheet: str, yaml_file_path: str = "settings.yaml") -> str:
+    logger.debug("Loading sheet id for '%s' from '%s'", sheet, yaml_file_path)
     with open(yaml_file_path, "r", encoding="UTF-8") as f:
         cfg = yaml.safe_load(f)
         sheet_id = cfg["google"]["sheets"][sheet]["id"]
@@ -47,7 +48,7 @@ class TelegramConnection:
 
     @classmethod
     def from_yaml(cls, file_path: str = "settings.yaml"):
-        logger.info("Loading Telegram config from '%s'", file_path)
+        logger.debug("Loading Telegram config from '%s'", file_path)
         with open(file_path, "r", encoding="UTF-8") as f:
             cfg = yaml.safe_load(f)
             api_id = cfg["telegram"]["client"]["id"]
@@ -58,7 +59,6 @@ class TelegramConnection:
             return cls(name, api_id, api_hash)
 
     async def send_msg(self, chat_id: int, txt: str, reply_to: Optional[int]):
-        logger.info("Sending to chat %d: %s", chat_id, txt)
         async with self.client:
             await self.client.send_message(
                 entity=chat_id,
@@ -66,7 +66,6 @@ class TelegramConnection:
                 reply_to=reply_to
             )
 
-        """TODO: add docstring"""
     async def fetch_msgs(self, chat_id: int) -> list[Message]:
         client = self.client
         async with client:
@@ -96,6 +95,9 @@ class GSheetConnection:
     scopes: list[str] = field(default_factory=lambda: GOOGLE_SCOPES)
 
     def __post_init__(self):
+        logger.debug("Creating GSheet Connection with:\n"
+                     "\tcredentials: %s\n"
+                     "\token_file: %s", self.credentials_file, self.token_file)
         self.sheets_svc = self._build_svc().spreadsheets()
 
     def _build_svc(self):
@@ -118,6 +120,8 @@ class GSheetConnection:
 
     def read(self, gsheet_id: str, sheet: str, sheet_range: str,
              includes_columns: bool = True) -> pd.DataFrame:
+        logger.debug("Reading range %s at sheet %s (%s)",
+                     sheet_range, sheet, gsheet_id)
         result = self.sheets_svc.values().get(
             spreadsheetId=gsheet_id,
             range=f"{sheet}!{sheet_range}"
@@ -131,6 +135,8 @@ class GSheetConnection:
 
     def write(self, gsheet_id: str, sheet: str, sheet_range: str,
               data: list[list]):
+        logger.debug("Writing to range %s at sheet %s (%s)",
+                     sheet_range, sheet, gsheet_id)
         self.sheets_svc.values().append(
             spreadsheetId=gsheet_id,
             range=f"{sheet}!{sheet_range}",
