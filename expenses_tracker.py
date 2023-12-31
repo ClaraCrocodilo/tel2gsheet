@@ -221,7 +221,7 @@ class ExpensesTracker(Tracker):
         logger.info("Finished uploading to GSheet")
 
     def send_feedback_messages(self):
-        if not (self.to_upload or self.failed_to_parse):
+        if not (self.to_upload or self.failed_to_parse or self.asked_for_help):
             return
 
         ok_msgs = "\n\n".join([f"\t-> {str(m)}" for m in self.to_upload])
@@ -250,7 +250,8 @@ class ExpensesTracker(Tracker):
             "\n\n" +
             "Em caso de dúvidas, envie uma mensagem contendo o caractere '?'"
         )
-        self.send_telegram_message(self.chat_id, text, None)
+        if ok_msgs or nok_msgs:
+            self.send_telegram_message(self.chat_id, text, None)
         if self.asked_for_help:
 
             accounts = set(self.accounts_df[self.accounts_df["Tipo"].isin(
@@ -260,7 +261,7 @@ class ExpensesTracker(Tracker):
             valid_acc_text = f"\n\nContas válidas: {', '.join(accounts)}"
             help_msg = self.text_header + self.help_message + valid_acc_text
             self.send_telegram_message(
-                self.chat_id, help_msg, max(self.asked_for_help)
+                self.chat_id, help_msg, self.asked_for_help[-1].id
             )
 
     def get_monthly_expenses(self, year: int, month: int) -> list[Decimal]:
