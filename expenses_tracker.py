@@ -315,7 +315,7 @@ def load_and_run_trackers(
 
 
 if __name__ == "__main__":
-    today_str = dt.datetime.now().strftime("%Y-%m-%d_%Hh%m")
+    today_str = dt.datetime.now().strftime("%Y-%m-%d_%Hh%M")
     log_name = f"{TRACKER_NAME}_{today_str}.log"
     logging.basicConfig(
         level=logging.INFO,
