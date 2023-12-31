@@ -11,11 +11,9 @@ from unidecode import unidecode
 
 from tel2gsheet import (
     IncomingMessage, Tracker, TelegramConnection, GSheetConnection,
-    load_chat_id, load_sheet_id
+    load_chat_id, load_sheet_id, logger
 )
 
-
-logger = logging.getLogger(__name__)
 
 TEXT_HEADER = "# MENSAGEM AUTOMATICA #\n\n"
 HELP_MESSAGE = (
@@ -317,6 +315,15 @@ def load_and_run_trackers(
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    today_str = dt.datetime.now().strftime("%Y-%m-%d_%Hh%m")
+    log_name = f"{TRACKER_NAME}_{today_str}.log"
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=[
+            logging.FileHandler(f"logs/{log_name}"),
+            logging.StreamHandler()
+        ]
+    )
     logger.setLevel(level=logging.DEBUG)
     load_and_run_trackers([ExpensesTracker])
