@@ -6,3 +6,4 @@ google-credentials.json
 google-token.json
 .jedi/*
 __pycache__/*
+logs/*
