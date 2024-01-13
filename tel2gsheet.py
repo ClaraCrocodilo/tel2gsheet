@@ -35,6 +35,11 @@ def load_sheet_id(sheet: str, yaml_file_path: str = "settings.yaml") -> str:
     return sheet_id
 
 
+def update_msgs_tz(msgs: list[Message]) -> None:
+    for m in msgs:
+        m.date = m.date - dt.timedelta(hours=3)
+
+
 @dataclass
 class TelegramConnection:
     name: str
@@ -70,6 +75,7 @@ class TelegramConnection:
         client = self.client
         async with client:
             msgs = list(await client.get_messages(chat_id, limit=100))
+        update_msgs_tz(msgs)
         return msgs
 
 
