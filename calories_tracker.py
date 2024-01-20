@@ -18,13 +18,15 @@ from tel2gsheet import (
 TEXT_HEADER = "# MENSAGEM AUTOMATICA #\n\n"
 HELP_MESSAGE = (
     "As mensagens de consumo de comida devem ter o seguinte formato:\n"
-    "NOME_DA_COMIDA - NUMERO_UNIDADES UNIDADE\n"
+    "NOME_DA_COMIDA - NUMERO_UNIDADES UNIDADE - DATA (OPCIONAL)\n"
     "NOME_DA_COMIDA - Nome que identifica a comida, e.g., 'Mini Pão Swift'\n"
     "NUMERO_UNIDADES - Quantidade de unidades consumidas, e.g., 3, 0.2, 1/2\n"
     "UNIDADE - Unidade de medida usada, e.g., g, ml, un\n"
+    "DATA - Data em que aquela quantidade de alimento foi consumida. Se não "
+    "for especificada, assume-se a data da mensagem como data do consumo\n\n"
     "Ex:\n"
     "Batata Frita - 60g\n"
-    "Barra de Cereal Dia - 1/2 un\n"
+    "Barra de Cereal Dia - 1/2 un - 28/12/2023\n"
     "Suco de Laranja - 1 copo\n\n"
     "As mensagens de registro de caloria por unidade devem ter o seguinte "
     "formato:\n"
@@ -144,15 +146,29 @@ class MealMessage(IncomingMessage):
         qty = f" {self.quantity} [{self.unit}]" if self.quantity else ""
         cals = f" ({self.calories} cal)" if self.calories else ""
         date_str = self.date.strftime("%d/%m/%Y")
-        return f"{self.description}:{qty}{cals} @ {date_str}"
+        return f"{self.description}:{qty}{cals} - {date_str}"
+
+    def fill_calories(self, entries_df: pd.DataFrame) -> None:
+        if self.calories:
+            return
+        df = entries_df
+        cal = df[
+            (df["Id Mensagem"] == str(self.id)) &
+            (df["Comida"] == self.description) &
+            (df["Quantidade"] == str(self.quantity)) &
+            (df["Unidade"] == self.unit)
+        ]["Calorias"].values.tolist()
+        if cal:
+            self.calories = cal[0]
+        return
 
     @classmethod
     def parse(cls, msg: Message, registrations = list[list[str, str]]):
         items = [i.strip() for i in msg.text.split("-")]
         desc = items[0]
         value, unit = split_unit(items[1])
-        date = (msg.date.date() if len(items) < 5 else
-                dt.datetime.strptime(items[2], "%d/%m/%Y"))
+        date = (msg.date.date() if len(items) < 3 else
+                dt.datetime.strptime(items[2], "%d/%m/%Y").date())
         if unit.upper() in ("CAL", "CALS"):
             return cls(msg.id, date, msg.chat_id, desc, None, None, value)
         else:
@@ -331,7 +347,7 @@ class CaloriesTracker(Tracker):
             data.append([
                 m.date.strftime("%d-%b-%Y"),
                 m.description,
-                str(m.quantity),
+                str(m.quantity) if m.quantity else "",
                 m.unit,
                 cal_formula if not m.calories else str(m.calories),
                 m.id
@@ -375,6 +391,8 @@ class CaloriesTracker(Tracker):
             for v in df[df["Calorias"] == "#N/A"][["Comida", "Unidade"]].values
         ]
 
+        for msg in self.to_upload:
+            msg.fill_calories(df)
         ok_source = self.to_upload + self.new_registrations
         ok_msgs = "\n\n".join([f"\t-> {str(m)}" for m in ok_source])
         nok_msgs = "\n\n".join(
@@ -383,7 +401,6 @@ class CaloriesTracker(Tracker):
         miss_msgs = "\n\n".join([f"\t-> {str(m)}" for m in
                                  self.missing_registration])
         error_msgs = "\n\n".join([f"\t-> {str(m)}" for m in missing_reg_error])
-
 
         success_text = "As seguintes mensagens foram registradas corretamente:"
         missing_text = ("As seguinte mensagens não foram registradas por falta "
@@ -397,10 +414,10 @@ class CaloriesTracker(Tracker):
             today = dt.datetime.now().date()
             date_str = dt.datetime.now().strftime("%m/%Y")
             stats = self.get_monthly_calories(today)
-            cals_text = (f"No mês {date_str} (excluindo hoje) foram gastas "
+            cals_text = (f"No mês {date_str} (excluindo hoje) foram consumidas "
                          f"{stats.monthly_calories:.2f} calorias "
                          f"(média {stats.monthly_mean:.2f} +- "
-                         f"{stats.monthly_stddev:.2f}).\nHoje foram gastas "
+                         f"{stats.monthly_stddev:.2f}).\nHoje foram consumidas "
                          f"{stats.today_calories:.2f} calorias.")
         else:
             cals_text = ""

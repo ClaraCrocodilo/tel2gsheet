@@ -26,7 +26,7 @@ HELP_MESSAGE = (
     "DATA - Data da transação. Se não for especificado, assume-se a data da "
     "mensagem como data da despesa\n\n"
     "Ex:\n"
-    "19.94 - Uber - Uber p/ Hospital - NuBank Credito - 2023-12-28\n"
+    "19.94 - Uber - Uber p/ Hospital - NuBank Credito - 28/12/2023\n"
     "20 - Loterica - Aposta Mega Virada - Dinheiro"
 )
 TRACKER_NAME = "expenses"
@@ -62,7 +62,7 @@ class ExpenseMessage(IncomingMessage):
                          if normalize_text(a) == normalize_text(items[3])]
         acc = matching_accs[0]
         date = (msg.date.date() if len(items) < 5 else
-                dt.datetime.strptime(items[4], "%d/%m/%Y"))
+                dt.datetime.strptime(items[4], "%d/%m/%Y").date())
         return cls(msg.id, date, msg.chat_id, price, cp, desc, acc)
 
 
